@@ -7,6 +7,10 @@ discovery:
 ip_conf:
   service_path: /plato/ip_dispatcher
 prpc:
+  server:
+    protocol: unix
+    addr: "0.0.0.0:9923"
+    weight: 100
   discov:
     name: etcd
     endpoints:

@@ -106,19 +106,20 @@ func (r *Register) run() {
 func (r *Register) registerServiceOrKeepAlive(ctx context.Context) {
 	for _, service := range r.registerServices {
 		if !service.isRegistered {
-			r.registerService(ctx, service)
-			r.registerServices[service.service.Name].isRegistered = true
+			if r.registerService(ctx, service) {
+				r.registerServices[service.service.Name].isRegistered = true
+			}
 		} else {
 			r.KeepAlive(ctx, service)
 		}
 	}
 }
 
-func (r *Register) registerService(ctx context.Context, service *registerService) {
+func (r *Register) registerService(ctx context.Context, service *registerService) bool {
 	leaseGrantResp, err := r.cli.Grant(ctx, r.keepAliveInterval)
 	if err != nil {
 		logger.CtxErrorf(ctx, "register service grant,err:%v", err)
-		return
+		return false
 	}
 	service.leaseID = leaseGrantResp.ID
 
@@ -127,13 +128,13 @@ func (r *Register) registerService(ctx context.Context, service *registerService
 		raw, err := json.Marshal(endpoint)
 		if err != nil {
 			logger.CtxErrorf(ctx, "register service err,err:%v, register data:%v", err, string(raw))
-			continue
+			return false
 		}
 
 		_, err = r.cli.Put(ctx, key, string(raw), clientv3.WithLease(leaseGrantResp.ID))
 		if err != nil {
 			logger.CtxErrorf(ctx, "register service err,err:%v, register data:%v", err, string(raw))
-			continue
+			return false
 		}
 
 	}
@@ -141,12 +142,13 @@ func (r *Register) registerService(ctx context.Context, service *registerService
 	keepAliveCh, err := r.cli.KeepAlive(ctx, leaseGrantResp.ID)
 	if err != nil {
 		logger.CtxErrorf(ctx, "register service keepalive,err:%v", err)
-		return
+		return false
 	}
 
 	service.keepAliveCh = keepAliveCh
 	service.isRegistered = true
 
+	return true
 }
 
 func (r *Register) unRegisterService(ctx context.Context, service *discov.Service) {
@@ -179,7 +181,11 @@ func (r *Register) unRegisterService(ctx context.Context, service *discov.Servic
 func (r *Register) KeepAlive(ctx context.Context, service *registerService) {
 	for {
 		select {
-		case <-service.keepAliveCh:
+		case resp := <-service.keepAliveCh:
+			if resp == nil {
+				service.isRegistered = false
+				return
+			}
 		default:
 			return
 		}

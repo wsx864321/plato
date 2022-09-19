@@ -142,7 +142,6 @@ func (p *PServer) Start(ctx context.Context) {
 	if err != nil {
 		panic(err)
 	}
-
 	go func() {
 		if err := s.Serve(lis); err != nil {
 			panic(err)
